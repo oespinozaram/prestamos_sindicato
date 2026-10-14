@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Estado de Cuenta - Sindicato SETUAN</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+
+<div class="container-fluid py-4">
+    <h2 class="mb-4">Control Financiero de Préstamos</h2>
+
+    <!-- Tarjetas del Dashboard -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card border-success border-start border-5 shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted">Cartera Vigente Global</h6>
+                    <h3>${{ dashboard.total_adeudado|floatformat:2 }}</h3>
+                    <small>{{ dashboard.total_prestamos }} préstamos activos</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-primary border-start border-5 shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted">Deuda Personal Activo (Nómina)</h6>
+                    <h3>${{ dashboard.deuda_activos|floatformat:2 }}</h3>
+                    <small>{{ dashboard.casos_activos }} trabajadores</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-warning border-start border-5 shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted">Deuda Personal Jubilado</h6>
+                    <h3>${{ dashboard.deuda_jubilados|floatformat:2 }}</h3>
+                    <small>{{ dashboard.casos_jubilados }} jubilados</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabla Principal (El reemplazo de Excel) -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h5 class="m-0">Expedientes Activos</h5>
+            <!-- Botón para añadir préstamo que conectaremos luego a un formulario web -->
+            <a href="{% url 'prestamos:nuevo' %}" class="btn btn-sm btn-primary">+ Nuevo Préstamo</a>
+        </div>
+        <div class="card-body p-0 table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Código</th>
+                        <th>Nombre del Afiliado</th>
+                        <th>Tipo</th>
+                        <th>Folio / Quincena</th>
+                        <th>Monto Solicitado</th>
+                        <th>Pagado</th>
+                        <th>Saldo Restante</th>
+                        <th>Progreso</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in prestamos %}
+                    <tr>
+                        <td><a href="{% url 'prestamos:historial' p.afiliado.codigo %}" class="text-decoration-none fw-bold">{{ p.afiliado.codigo }}</a></td>
+                        <td>{{ p.afiliado.nombre_completo }}</td>
+                        <td>
+                            {% if p.afiliado.tipo_personal_nomina == 'N' %}
+                                <span class="badge bg-primary">Activo</span>
+                            {% else %}
+                                <span class="badge bg-warning text-dark">Jubilado</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            Folio: {{ p.num_incidencia }}<br>
+                            <small class="text-muted">Inicio: {{ p.inicia_qna }}</small>
+                        </td>
+                        <td>${{ p.importe_original|floatformat:2 }}</td>
+                        <td class="text-success">${{ p.monto_pagado|floatformat:2 }}</td>
+                        <td class="text-danger fw-bold">${{ p.monto_restante|floatformat:2 }}</td>
+                        <td>
+                            {{ p.quincenas_pagadas }} de {{ p.num_periodos }}<br>
+                            <small class="text-muted">Faltan {{ p.quincenas_restantes }}</small>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center py-4 text-muted">No hay préstamos activos registrados.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>
