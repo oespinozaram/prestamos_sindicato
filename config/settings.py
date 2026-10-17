@@ -38,7 +38,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'afiliados.apps.AfiliadosConfig',
-    'prestamos.apps.PrestamosConfig'
+    'prestamos.apps.PrestamosConfig',
+    'django_q'
 ]
 
 MIDDLEWARE = [
@@ -138,4 +139,18 @@ MAILERS = {
     'default': {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
     },
+}
+
+Q_CLUSTER = {
+    'name': 'setuan_etl_cluster',
+    'workers': 2,                 # Número de hilos simultáneos procesando PDFs
+    'recycle': 500,               # Reiniciar worker después de 500 tareas (libera memoria)
+    'timeout': 600,               # Tiempo máximo por PDF: 10 minutos
+    'retry': 660,
+    'compress': True,
+    'save_limit': 250,            # Límite de historiales de tareas exitosas guardadas
+    'queue_limit': 500,
+    'cpu_affinity': 1,
+    'label': 'ETL Background Tasks',
+    'orm': 'default'              # Usa la base de datos actual en lugar de Redis
 }

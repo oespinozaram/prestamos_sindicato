@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Ajuste Manual de Préstamo</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+
+            <div class="mb-3">
+                <!-- Botón para regresar al historial usando el historial del navegador -->
+                <button onclick="history.back()" class="btn btn-secondary">&larr; Cancelar y Volver al Historial</button>
+            </div>
+
+            <div class="card shadow-sm border-0 border-start border-primary border-5">
+                <div class="card-header bg-white py-3">
+                    <h5 class="m-0 text-primary">Registrar Abono o Ajuste Manual</h5>
+                    <small class="text-muted">La alteración dejará huella de auditoría en el sistema.</small>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+
+                        <div class="alert alert-warning small">
+                            <strong>Nota contable:</strong> Si ingresas un valor positivo (ej. <code>500</code>), se registrará como un abono (HABER) y disminuirá la deuda. Si ingresas un valor negativo (ej. <code>-500</code>), aumentará la deuda (Cargo).
+                        </div>
+
+                        <!-- Renderizado automático del formulario -->
+                        {{ form.as_p }}
+
+                        <div class="d-grid mt-4">
+                            <button type="submit" class="btn btn-primary btn-lg">Guardar Movimiento</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+</body>
+</html>
