@@ -90,27 +90,28 @@ class DashboardPrestamosView(ListView):
     context_object_name = "prestamos"
 
     def get_queryset(self):
-        # Traemos todos los préstamos vigentes, optimizando la consulta al Padrón
-        return Prestamo.objects.filter(liquidado=False).select_related('afiliado').order_by('afiliado__nombre_completo')
+        # Excluimos los liquidados para ver VIGENTES y CONGELADOS
+        return Prestamo.objects.exclude(
+            estado_prestamo=Prestamo.EstadoPrestamo.LIQUIDADO
+        ).select_related('afiliado').order_by('afiliado__nombre_completo')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
 
-        # Cálculos del Dashboard
         cartera = self.get_queryset()
 
-        total_adeudado = sum(p.monto_restante for p in cartera)
+        # El resto del código se queda exactamente igual
+        total_adeudado = sum(p.saldo_actual for p in cartera)
 
-        # Separación Activos vs Jubilados
         activos = [p for p in cartera if p.afiliado.tipo_personal_nomina == 'N']
         jubilados = [p for p in cartera if p.afiliado.tipo_personal_nomina == 'J']
 
         context['dashboard'] = {
             'total_adeudado': total_adeudado,
             'total_prestamos': len(cartera),
-            'deuda_activos': sum(p.monto_restante for p in activos),
+            'deuda_activos': sum(p.saldo_actual for p in activos),
             'casos_activos': len(activos),
-            'deuda_jubilados': sum(p.monto_restante for p in jubilados),
+            'deuda_jubilados': sum(p.saldo_actual for p in jubilados),
             'casos_jubilados': len(jubilados),
         }
         return context

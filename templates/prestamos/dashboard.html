@@ -76,7 +76,11 @@
                         </td>
                         <td>
                             Folio: {{ p.num_incidencia }}<br>
-                            <small class="text-muted">Inicio: {{ p.inicia_qna }}</small>
+                            {% if p.estado_prestamo == 'CONGELADO' %}
+                                <span class="badge bg-warning text-dark mt-1">❄ Congelado</span>
+                            {% else %}
+                                <small class="text-muted">Inicio: {{ p.inicia_qna }}</small>
+                            {% endif %}
                         </td>
                         <td>${{ p.importe_original|floatformat:2 }}</td>
                         <td class="text-success">${{ p.monto_pagado|floatformat:2 }}</td>

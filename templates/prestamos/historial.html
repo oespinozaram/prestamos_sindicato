@@ -36,8 +36,10 @@
                     </a>
                 {% endif %}
 
-                {% if libro.prestamo.liquidado or libro.saldo_final_calculado <= 0 %}
+                {% if libro.prestamo.estado_prestamo == 'LIQUIDADO' %}
                     <span class="badge bg-success">Liquidado</span>
+                {% elif libro.prestamo.estado_prestamo == 'CONGELADO' %}
+                    <span class="badge bg-warning text-dark">❄ Congelado</span>
                 {% else %}
                     <span class="badge bg-danger">Vigente</span>
                 {% endif %}

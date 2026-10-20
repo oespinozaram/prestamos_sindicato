@@ -1,6 +1,5 @@
 import logging
 from django.db import transaction
-from pdfminer.high_level import extract_text
 from prestamos.models import LoteImportacion
 from .services.etl_service import procesar_saldos, procesar_pagados, procesar_anexos
 
@@ -13,20 +12,19 @@ def ejecutar_etl_lote(lote_id):
         lote.estado = LoteImportacion.EstadoProcesamiento.PROCESANDO
         lote.save(update_fields=['estado'])
 
-        # Extracción pura de texto del PDF
-        texto_crudo = extract_text(lote.archivo_origen.path)
+        csv_path = lote.archivo_origen.path
 
         with transaction.atomic():
             if lote.tipo_lote == LoteImportacion.TipoLote.SALDOS:
-                registros = procesar_saldos(texto_crudo, lote)
+                registros = procesar_saldos(csv_path, lote)
             elif lote.tipo_lote == LoteImportacion.TipoLote.PAGADOS:
-                registros = procesar_pagados(texto_crudo, lote)
+                registros = procesar_pagados(csv_path, lote)
             elif lote.tipo_lote == LoteImportacion.TipoLote.ANEXOS:
-                registros = procesar_anexos(texto_crudo, lote)
+                registros = procesar_anexos(csv_path, lote)
 
         lote.registros_procesados = registros
         lote.estado = LoteImportacion.EstadoProcesamiento.COMPLETADO
-        lote.log_procesamiento = f"Extracción exitosa. {registros} registros procesados."
+        lote.log_procesamiento = f"Extracción exitosa. {registros} registros inyectados desde CSV."
         lote.save(update_fields=['estado', 'registros_procesados', 'log_procesamiento'])
 
     except Exception as e:

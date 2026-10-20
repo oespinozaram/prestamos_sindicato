@@ -1,104 +1,96 @@
+import csv
 import re
 from decimal import Decimal
+from django.utils import timezone
 from prestamos.models import Prestamo, LoteImportacion
 from afiliados.models import Afiliado
 
 
-def procesar_saldos(texto: str, lote: LoteImportacion) -> int:
-    """Paso 1: Fotografía de la cartera. Actualiza saldos e identifica liquidaciones directas."""
-    # Regex genérico: [Plaza] [Folio] [Importe Original] [Abono] [Saldo Restante]
-    patron = re.compile(
-        r'(?P<plaza>\d{4,6})\s+(?P<folio>\d+)\s+(?P<importe>[\d,]+\.\d{2})\s+(?P<descuento>[\d,]+\.\d{2})\s+(?P<saldo>[\d,]+\.\d{2})')
+def limpiar_monto(texto):
+    texto_limpio = re.sub(r'[^0-9\.\-]', '', str(texto))
+    return Decimal(texto_limpio) if texto_limpio else Decimal('0.00')
 
+
+def procesar_saldos(csv_path: str, lote: LoteImportacion) -> int:
     registros = 0
-    for match in patron.finditer(texto):
-        datos = match.groupdict()
-        plaza = datos['plaza']
-        folio = int(datos['folio'])
-        saldo_pdf = Decimal(datos['saldo'].replace(',', ''))
+    # Usamos utf-8-sig por si el CSV fue manipulado en Excel y guardó el BOM
+    with open(csv_path, mode='r', encoding='utf-8-sig') as f:
+        reader = csv.DictReader(f)
+        for fila in reader:
+            if not fila.get('no_plaza') or not fila.get('num_inc'):
+                continue
 
-        prestamos = Prestamo.objects.filter(
-            afiliado__numero_trabajador=plaza,
-            num_incidencia=folio,
-            estado_prestamo__in=[Prestamo.EstadoPrestamo.VIGENTE, Prestamo.EstadoPrestamo.CONGELADO]
-        )
+            plaza = str(fila['no_plaza']).strip()
+            folio = int(fila['num_inc'])
+            tipo_nomina = fila.get('tipo_personal', 'N')
 
-        if prestamos.exists():
-            p = prestamos.first()
-            p.saldo_actual = saldo_pdf
-            if p.saldo_actual <= 0:
-                p.estado_prestamo = Prestamo.EstadoPrestamo.LIQUIDADO
-            p.save(update_fields=['saldo_actual', 'estado_prestamo'])
-            registros += 1
-
-    return registros
-
-
-def procesar_pagados(texto: str, lote: LoteImportacion) -> int:
-    """Paso 2: Cierre de expedientes."""
-    patron = re.compile(r'(?P<plaza>\d{4,6})\s+(?P<folio>\d+)')
-
-    registros = 0
-    for match in patron.finditer(texto):
-        plaza = match.group('plaza')
-        folio = int(match.group('folio'))
-
-        actualizados = Prestamo.objects.filter(
-            afiliado__numero_trabajador=plaza,
-            num_incidencia=folio
-        ).update(
-            estado_prestamo=Prestamo.EstadoPrestamo.LIQUIDADO,
-            saldo_actual=0
-        )
-        if actualizados:
-            registros += 1
-
-    return registros
-
-
-def procesar_anexos(texto: str, lote: LoteImportacion) -> int:
-    """Paso 3: Heartbeat del padrón (Mov. 67) y auditoría de abonos (Mov. 68)."""
-    patron = re.compile(r'(?P<plaza>\d{4,6})\s+(?P<clave>67|68)\s+(?P<monto>[\d,]+\.\d{2})')
-
-    plazas_activas = set()
-    registros = 0
-
-    for match in patron.finditer(texto):
-        plaza = match.group('plaza')
-        clave = match.group('clave')
-        monto = Decimal(match.group('monto').replace(',', ''))
-
-        afiliado = Afiliado.objects.filter(numero_trabajador=plaza).first()
-        if not afiliado:
-            continue
-
-        if clave == '67':
-            plazas_activas.add(plaza)
-            if not afiliado.activo:
+            # 1. UPSERT Afiliado
+            afiliado, creado = Afiliado.objects.get_or_create(
+                codigo=plaza,
+                defaults={
+                    'numero_trabajador': plaza,
+                    'nombre_completo': fila.get('nombre', f"TRABAJADOR {plaza}"),
+                    'tipo_personal_nomina': tipo_nomina if tipo_nomina in ['J', 'N'] else 'N',
+                    'activo': True
+                }
+            )
+            if not creado and not afiliado.activo:
                 afiliado.activo = True
                 afiliado.save(update_fields=['activo'])
 
-        elif clave == '68':
-            prestamo = afiliado.prestamos.filter(estado_prestamo=Prestamo.EstadoPrestamo.VIGENTE).first()
-            if prestamo:
-                prestamo.abonos.create(
-                    lote=lote,
-                    afiliado=afiliado,
-                    clave=68,
-                    monto_descontado=monto,
-                    anio=lote.anio,
-                    quincena=lote.quincena
-                )
-        registros += 1
+            # 2. UPSERT Préstamo
+            saldo_csv = limpiar_monto(fila.get('saldo'))
+            prestamo, p_creado = Prestamo.objects.get_or_create(
+                afiliado=afiliado,
+                num_incidencia=folio,
+                inicia_qna=fila.get('inicia_qna', '00-0000'),
+                defaults={
+                    'num_periodos': int(fila.get('num_per', 20)),
+                    'monto_descontar_qna': limpiar_monto(fila.get('monto_descontar')),
+                    'termina_qna': fila.get('termina_qna', ''),
+                    'importe_original': limpiar_monto(fila.get('importe')),
+                    'acumulado_pagado': limpiar_monto(fila.get('acumulado')),
+                    'saldo_actual': saldo_csv,
+                    'estado_prestamo': Prestamo.EstadoPrestamo.LIQUIDADO if saldo_csv <= 0 else Prestamo.EstadoPrestamo.VIGENTE
+                }
+            )
 
-    # Detectar inactivos: Tienen registro previo pero perdieron el latido 67 en esta quincena
-    afiliados_inactivos = Afiliado.objects.filter(activo=True).exclude(numero_trabajador__in=plazas_activas)
-    for afi in afiliados_inactivos:
-        afi.activo = False
-        afi.save(update_fields=['activo'])
-        # Congelar deuda
-        afi.prestamos.filter(estado_prestamo=Prestamo.EstadoPrestamo.VIGENTE).update(
-            estado_prestamo=Prestamo.EstadoPrestamo.CONGELADO
-        )
+            if not p_creado:
+                prestamo.acumulado_pagado = limpiar_monto(fila.get('acumulado'))
+                prestamo.saldo_actual = saldo_csv
+                if prestamo.saldo_actual <= 0:
+                    prestamo.estado_prestamo = Prestamo.EstadoPrestamo.LIQUIDADO
+                prestamo.save(update_fields=['acumulado_pagado', 'saldo_actual', 'estado_prestamo', 'actualizado_en'])
+
+            registros += 1
 
     return registros
+
+
+def procesar_pagados(csv_path: str, lote: LoteImportacion) -> int:
+    registros = 0
+    with open(csv_path, mode='r', encoding='utf-8-sig') as f:
+        reader = csv.DictReader(f)
+        for fila in reader:
+            if not fila.get('no_plaza') or not fila.get('num_inc'):
+                continue
+
+            plaza = str(fila['no_plaza']).strip()
+            folio = int(fila['num_inc'])
+            inicia = fila.get('inicia_qna', '')
+
+            filtro = {'afiliado__codigo': plaza, 'num_incidencia': folio}
+            if inicia:
+                filtro['inicia_qna'] = inicia
+
+            actualizados = Prestamo.objects.filter(**filtro).update(
+                estado_prestamo=Prestamo.EstadoPrestamo.LIQUIDADO,
+                saldo_actual=0,
+                actualizado_en=timezone.now()
+            )
+            if actualizados:
+                registros += 1
+
+    return registros
+
+# procesar_anexos requeriría una lógica similar adaptada a las columnas de su respectivo CSV.
