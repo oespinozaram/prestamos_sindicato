@@ -94,3 +94,44 @@ def procesar_pagados(csv_path: str, lote: LoteImportacion) -> int:
     return registros
 
 # procesar_anexos requeriría una lógica similar adaptada a las columnas de su respectivo CSV.
+def procesar_anexos(texto: str, lote: LoteImportacion) -> int:
+    """Paso 3: Heartbeat del padrón y auditoría de abonos."""
+    patron = re.compile(r'(?P<plaza>\d{4,6})\s+(?P<clave>67|68)\s+(?P<monto>[\d,]+\.\d{2})')
+    plazas_activas = set()
+    registros = 0
+
+    for match in patron.finditer(texto):
+        plaza = match.group('plaza')
+        clave = match.group('clave')
+        monto = Decimal(match.group('monto').replace(',', ''))
+
+        afiliado = Afiliado.objects.filter(numero_trabajador=plaza).first()
+        if not afiliado: continue
+
+        if clave == '67':
+            plazas_activas.add(plaza)
+            if not afiliado.activo:
+                afiliado.activo = True
+                afiliado.save(update_fields=['activo'])
+
+        elif clave == '68':
+            prestamo = afiliado.prestamos.filter(estado_prestamo=Prestamo.EstadoPrestamo.VIGENTE).first()
+            if prestamo:
+                prestamo.abonos.create(
+                    lote=lote, afiliado=afiliado, clave=68,
+                    monto_descontado=monto, anio=lote.anio, quincena=lote.quincena
+                )
+        registros += 1
+
+    inactivos = Afiliado.objects.filter(activo=True).exclude(numero_trabajador__in=plazas_activas)
+    for afi in inactivos:
+        afi.activo = False
+        afi.save(update_fields=['activo'])
+        afi.prestamos.filter(estado_prestamo=Prestamo.EstadoPrestamo.VIGENTE).update(
+            estado_prestamo=Prestamo.EstadoPrestamo.CONGELADO
+        )
+
+    return registros
+
+# def procesar_anexos(csv_path: str, lote: LoteImportacion) -> int:
+#     pass

@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 def ejecutar_etl_lote(lote_id):
+    lote = None
     try:
         lote = LoteImportacion.objects.get(id=lote_id)
         lote.estado = LoteImportacion.EstadoProcesamiento.PROCESANDO
